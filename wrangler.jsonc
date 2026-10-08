@@ -1,7 +1,8 @@
 {
   // 部署命令：npx wrangler deploy
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "hairless-monkey",
+  // Worker 名字 = 线上脚本名，必须和 Cloudflare 项目里的名字一致
+  "name": "pornhubpromax-cn",
   "compatibility_date": "2025-04-01",
   "main": "src/index.js",
   "assets": {

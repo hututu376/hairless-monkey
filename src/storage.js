@@ -12,6 +12,8 @@
 export const PHOTO_PREFIX = "photos/";
 
 const B2_AUTH_URL = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+/** 桶名不是密钥，给个默认值，省得在仪表盘里再配一个变量；环境变量 B2_BUCKET 优先级更高。 */
+const DEFAULT_B2_BUCKET = "herclus";
 const AUTH_TTL = 12 * 60 * 60 * 1000;
 const UPLOAD_TTL = 60 * 60 * 1000;
 
@@ -21,7 +23,7 @@ let cachedUpload = null;
 
 export function createStorage(env) {
   if (env.PHOTO_BUCKET) return new R2Storage(env.PHOTO_BUCKET);
-  if (env.B2_KEY_ID && env.B2_APP_KEY && env.B2_BUCKET) return new B2Storage(env);
+  if (env.B2_KEY_ID && env.B2_APP_KEY) return new B2Storage(env);
   return null;
 }
 
@@ -133,7 +135,8 @@ class B2Storage {
     this.kind = "b2";
     this.keyId = env.B2_KEY_ID;
     this.appKey = env.B2_APP_KEY;
-    this.bucketName = env.B2_BUCKET;
+    // 桶名不是密钥，允许在代码里给一个默认值；配了 B2_BUCKET 环境变量时以环境变量为准。
+    this.bucketName = env.B2_BUCKET || DEFAULT_B2_BUCKET;
     // 只在离线测试时才需要指向本地假 B2
     this.authUrl = env.B2_AUTH_URL || B2_AUTH_URL;
   }
