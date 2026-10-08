@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>无毛猴</title>
+    <meta
+      name="description"
+      content="无毛猴的照片与记录：认识它们、了解怎么照顾，也可以把你拍到的那一张分享上来。"
+    />
+    <meta name="theme-color" content="#000000" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="无毛猴" />
+    <meta
+      property="og:description"
+      content="无毛猴的照片与记录：认识它们、了解怎么照顾，也可以把你拍到的那一张分享上来。"
+    />
+    <meta property="og:image" content="media/hero.jpg" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="favicon.svg" />
+    <link rel="preload" as="image" href="media/hero.jpg" />
+    <link rel="stylesheet" href="assets/style.css" />
+    <script>
+      document.documentElement.classList.add("has-js");
+    </script>
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="m9 18 6-6-6-6" />
+      </symbol>
+      <symbol id="i-chevron-left" viewBox="0 0 24 24">
+        <path d="m15 18-6-6 6-6" />
+      </symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="M18 6 6 18" />
+        <path d="m6 6 12 12" />
+      </symbol>
+      <symbol id="i-image" viewBox="0 0 24 24">
+        <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+        <circle cx="9" cy="9" r="2" />
+        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="m4.93 4.93 1.41 1.41" />
+        <path d="m17.66 17.66 1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="m6.34 17.66-1.41 1.41" />
+        <path d="m19.07 4.93-1.41 1.41" />
+      </symbol>
+      <symbol id="i-thermometer" viewBox="0 0 24 24">
+        <path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+      </symbol>
+      <symbol id="i-droplet" viewBox="0 0 24 24">
+        <path
+          d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"
+        />
+      </symbol>
+      <symbol id="i-users" viewBox="0 0 24 24">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M20 6 9 17l-5-5" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="12" />
+        <line x1="12" y1="16" x2="12.01" y2="16" />
+      </symbol>
+    </svg>
+
+    <a class="skip-link" href="#gallery">跳到相册</a>
+
+    <header class="nav" id="nav">
+      <div class="nav__inner">
+        <a class="nav__brand" href="#top">
+          <svg class="nav__mark" viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="5" cy="16" r="3.6" />
+            <circle cx="27" cy="16" r="3.6" />
+            <path d="M16 6.5c5.4 0 9.2 4.2 9.2 9.5s-3.8 9.5-9.2 9.5S6.8 21.3 6.8 16 10.6 6.5 16 6.5Z" />
+            <circle cx="12.6" cy="15" r="1.5" class="nav__mark-dot" />
+            <circle cx="19.4" cy="15" r="1.5" class="nav__mark-dot" />
+            <path d="M13.6 20c1.6 1.1 3.2 1.1 4.8 0" class="nav__mark-line" />
+          </svg>
+          <span>无毛猴</span>
+        </a>
+
+        <nav class="nav__links" aria-label="主导航">
+          <a href="#about">认识</a>
+          <a href="#care">照顾</a>
+          <a href="#gallery">相册</a>
+          <a href="#upload">上传</a>
+        </nav>
+
+        <div class="nav__actions">
+          <a class="btn btn--small" href="#upload">
+            <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+            上传照片
+          </a>
+          <button class="nav__toggle" type="button" aria-expanded="false" aria-controls="navPanel">
+            <span class="nav__toggle-bar"></span>
+            <span class="nav__toggle-bar"></span>
+            <span class="sr-only">展开导航</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="nav__panel" id="navPanel" hidden>
+        <a href="#about">认识</a>
+        <a href="#care">照顾</a>
+        <a href="#gallery">相册</a>
+        <a href="#upload">上传</a>
+        <a href="/manage.html">管理</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero__copy">
+          <h1>无毛猴</h1>
+          <p class="hero__lede">
+            没有一身毛，也照样是猴子。<br />
+            这里收集它们的照片，也留一个位置给你拍下的那一张。
+          </p>
+          <div class="hero__cta">
+            <a class="btn" href="#gallery">
+              看照片
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg>
+            </a>
+            <a class="link-arrow" href="#upload">
+              上传照片
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg>
+            </a>
+          </div>
+        </div>
+
+        <figure class="hero__figure">
+          <img src="media/hero.jpg" alt="一只无毛猴" />
+        </figure>
+      </section>
+
+      <section class="band band--light" id="about">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <h2>没有毛，也只是猴子的一种样子。</h2>
+          </header>
+
+          <div class="split">
+            <div class="split__text reveal">
+              <p>
+                无毛猴不是一个独立的物种，而是指身上大部分毛发缺失的猴子个体。它们可能天生毛发就稀疏，
+                也可能因为疾病、寄生虫、营养问题或长期压力逐渐掉毛；在猕猴类以及人工饲养的种群中，
+                都出现过这样的个体。
+              </p>
+              <p>
+                毛发对猴子来说是一件外套：挡太阳、保暖、隔开蚊虫，也是同类之间互相辨认和示好的信号。
+                少了这层外套，皮肤就直接暴露在环境里，也因此更容易被人注意到。
+              </p>
+            </div>
+            <figure class="split__figure reveal">
+              <img src="media/side.jpg" alt="无毛猴的近景照片" loading="lazy" decoding="async" />
+            </figure>
+          </div>
+
+          <ol class="facts">
+            <li class="facts__item reveal">
+              <span class="facts__index">01</span>
+              <h3>天生的差异</h3>
+              <p>有些个体从出生起毛发就稀疏，属于基因层面的个体差异，本身并不等于生病。</p>
+            </li>
+            <li class="facts__item reveal">
+              <span class="facts__index">02</span>
+              <h3>也可能是后天</h3>
+              <p>皮肤病、寄生虫、营养不良或长期压力，都可能让猴子大面积掉毛，这类情况需要兽医介入。</p>
+            </li>
+            <li class="facts__item reveal">
+              <span class="facts__index">03</span>
+              <h3>需要更多照顾</h3>
+              <p>没有毛发保护，皮肤更容易晒伤、干裂和感染，对温度、湿度也更敏感。</p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="band band--dark" id="care">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <h2>照顾它们，和照顾别的猴子不太一样。</h2>
+            <p class="section-head__lede">
+              毛发缺失让皮肤成了第一道防线，日常细节比平时更要紧。
+            </p>
+          </header>
+
+          <ul class="care">
+            <li class="care__item reveal">
+              <svg class="icon icon--lg" aria-hidden="true"><use href="#i-sun" /></svg>
+              <h3>防晒与遮阴</h3>
+              <p>直射阳光对裸露皮肤伤害很大，活动区域要留出阴凉，外出时间尽量避开正午。</p>
+            </li>
+            <li class="care__item reveal">
+              <svg class="icon icon--lg" aria-hidden="true"><use href="#i-thermometer" /></svg>
+              <h3>保温与控温</h3>
+              <p>毛发是天然的保温层，室温稳定、避开穿堂风和突然的冷热变化比什么都重要。</p>
+            </li>
+            <li class="care__item reveal">
+              <svg class="icon icon--lg" aria-hidden="true"><use href="#i-droplet" /></svg>
+              <h3>皮肤护理</h3>
+              <p>保持清洁、适度滋润，留意红肿、破皮、结痂和异常抓挠，有变化及时就医。</p>
+            </li>
+            <li class="care__item reveal">
+              <svg class="icon icon--lg" aria-hidden="true"><use href="#i-users" /></svg>
+              <h3>陪伴与社交</h3>
+              <p>猴子是群居动物，梳毛、玩耍、被关注都是日常需要，长期孤立会让状况更糟。</p>
+            </li>
+          </ul>
+
+          <p class="note reveal">以上是照顾方向的常识提示，具体方案请以兽医的诊断和意见为准。</p>
+        </div>
+      </section>
+
+      <section class="band band--light" id="gallery">
+        <div class="wrap wrap--wide">
+          <header class="section-head section-head--stack reveal">
+            <div>
+              <h2>相册</h2>
+              <p class="section-head__lede">站长的精选照片，加上大家上传的。</p>
+            </div>
+            <div class="segmented" role="tablist" aria-label="相册筛选">
+              <button type="button" role="tab" aria-selected="true" data-filter="all">全部</button>
+              <button type="button" role="tab" aria-selected="false" data-filter="curated">精选</button>
+              <button type="button" role="tab" aria-selected="false" data-filter="community">大家上传</button>
+            </div>
+          </header>
+
+          <p class="gallery__meta">
+            <span id="galleryCount">正在载入…</span>
+            <span id="galleryStatus" class="gallery__status" hidden></span>
+          </p>
+
+          <div class="gallery" id="gallery-grid" aria-live="polite"></div>
+
+          <div class="gallery__empty" id="galleryEmpty" hidden>
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-image" /></svg>
+            <p id="galleryEmptyText">还没有人上传照片，你可以是第一个。</p>
+          </div>
+
+          <div class="gallery__footer">
+            <button class="btn btn--ghost" id="loadMore" type="button" hidden>加载更多</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="band band--muted" id="upload">
+        <div class="wrap">
+          <header class="section-head reveal">
+            <h2>把你拍到的那一张放进来。</h2>
+            <p class="section-head__lede">上传后所有人都能在相册里看到，照片版权归你所有。</p>
+          </header>
+
+          <form class="upload" id="uploadForm" novalidate>
+            <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择或拖入照片">
+              <svg class="icon icon--xl" aria-hidden="true"><use href="#i-upload" /></svg>
+              <p class="dropzone__title">拖到此处，或点击选择照片</p>
+              <p class="dropzone__hint">JPG / PNG / WebP / GIF，单张不超过 10 MB</p>
+              <input id="fileInput" type="file" accept="image/*" multiple hidden />
+            </div>
+
+            <ul class="queue" id="queue" hidden></ul>
+
+            <div class="fields">
+              <label class="field">
+                <span class="field__label">昵称</span>
+                <input id="uploader" name="uploader" type="text" maxlength="24" placeholder="匿名" autocomplete="nickname" />
+              </label>
+              <label class="field">
+                <span class="field__label">一句话说明</span>
+                <input
+                  id="caption"
+                  name="caption"
+                  type="text"
+                  maxlength="140"
+                  placeholder="在哪里拍到的、它当时在做什么"
+                />
+              </label>
+            </div>
+
+            <div class="turnstile" id="turnstile" hidden></div>
+
+            <div class="upload__actions">
+              <button class="btn" id="submitBtn" type="submit" disabled>
+                <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+                上传
+              </button>
+              <div class="progress" id="progress" hidden>
+                <div class="progress__track"><div class="progress__bar" id="progressBar"></div></div>
+                <span class="progress__text" id="progressText">0%</span>
+              </div>
+            </div>
+
+            <p class="form-status" id="formStatus" role="status" hidden></p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <div class="footer__top">
+          <div class="footer__brand">
+            <span class="footer__mark">无毛猴</span>
+            <p>一个记录没有毛的猴子的地方。</p>
+          </div>
+          <nav class="footer__nav" aria-label="页脚导航">
+            <div>
+              <h3>浏览</h3>
+              <a href="#about">认识</a>
+              <a href="#care">照顾</a>
+              <a href="#gallery">相册</a>
+              <a href="#upload">上传</a>
+            </div>
+            <div>
+              <h3>站点</h3>
+              <a href="/manage.html">管理后台</a>
+              <a href="/api/photos">相册数据</a>
+            </div>
+          </nav>
+        </div>
+        <div class="footer__bottom">
+          <p>照片版权归上传者所有，如涉侵权请联系站长删除。</p>
+          <p>© <span id="year">2026</span> 无毛猴</p>
+        </div>
+      </div>
+    </footer>
+
+    <div class="lightbox" id="lightbox" hidden tabindex="-1" role="dialog" aria-modal="true" aria-label="照片查看">
+      <button class="lightbox__close" id="lightboxClose" type="button" aria-label="关闭">
+        <svg class="icon" aria-hidden="true"><use href="#i-close" /></svg>
+      </button>
+      <button class="lightbox__nav lightbox__nav--prev" id="lightboxPrev" type="button" aria-label="上一张">
+        <svg class="icon" aria-hidden="true"><use href="#i-chevron-left" /></svg>
+      </button>
+      <button class="lightbox__nav lightbox__nav--next" id="lightboxNext" type="button" aria-label="下一张">
+        <svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg>
+      </button>
+      <figure class="lightbox__figure">
+        <img id="lightboxImage" alt="" />
+        <figcaption class="lightbox__caption" id="lightboxCaption"></figcaption>
+      </figure>
+      <a class="lightbox__download" id="lightboxDownload" href="#" download>
+        <svg class="icon" aria-hidden="true"><use href="#i-download" /></svg>
+        下载原图
+      </a>
+    </div>
+
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

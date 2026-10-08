@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>照片管理 · 无毛猴</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="assets/style.css" />
+  </head>
+  <body>
+    <header class="manage__header">
+      <div class="wrap">
+        <a class="link-arrow" href="/">返回站点</a>
+        <h1>照片管理</h1>
+      </div>
+    </header>
+
+    <main class="wrap manage">
+      <form class="manage__token" id="tokenForm">
+        <label class="field">
+          <span class="field__label">管理口令</span>
+          <input id="tokenInput" type="password" autocomplete="current-password" placeholder="ADMIN_TOKEN" />
+        </label>
+        <button class="btn" type="submit">保存并加载</button>
+      </form>
+
+      <p class="form-status" id="status" role="status" hidden></p>
+
+      <div class="manage__bar">
+        <span id="count">共 0 张</span>
+        <button class="btn btn--ghost btn--small" id="loadMore" type="button" hidden>加载更多</button>
+      </div>
+
+      <ul class="manage__list" id="list"></ul>
+    </main>
+
+    <script src="assets/manage.js" defer></script>
+  </body>
+</html>

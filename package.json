@@ -1,0 +1,17 @@
+{
+  "name": "hairless-monkey-site",
+  "private": true,
+  "version": "1.0.0",
+  "description": "无毛猴主题站点：静态页面 + Cloudflare Worker API + R2 相册存储",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "photos": "python scripts/build-photos.py",
+    "tail": "wrangler tail",
+    "verify": "node tools/verify.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.13.0",
+    "wrangler": "^4.20.0"
+  }
+}

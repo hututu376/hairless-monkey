@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.wrangler-config/
+.wrangler-cache/
+.shots/
+dist/
+*.log
+.DS_Store

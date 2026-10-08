@@ -1,0 +1,25 @@
+{
+  // 部署命令：npx wrangler deploy
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hairless-monkey",
+  "compatibility_date": "2025-04-01",
+  "main": "src/index.js",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "r2_buckets": [
+    {
+      // 首次部署前创建：npx wrangler r2 bucket create hairless-monkey-photos
+      "binding": "PHOTO_BUCKET",
+      "bucket_name": "hairless-monkey-photos"
+    }
+  ],
+  "vars": {
+    // 可选：开启 Turnstile 后填入站点公钥（0x 开头），同时用 secret 设置 TURNSTILE_SECRET_KEY
+    // "TURNSTILE_SITE_KEY": "0x4AAA..."
+  },
+  "observability": {
+    "enabled": true
+  }
+}
