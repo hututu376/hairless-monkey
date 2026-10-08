@@ -8,17 +8,32 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
-  "r2_buckets": [
-    {
-      // 首次部署前创建：npx wrangler r2 bucket create hairless-monkey-photos
-      "binding": "PHOTO_BUCKET",
-      "bucket_name": "hairless-monkey-photos"
-    }
-  ],
+
+  // 照片存储二选一，代码会自动判断用了哪个：
+  //
+  // A. Backblaze B2（默认走这条，不用改这里）
+  //    在项目里设置四个变量/密钥：B2_KEY_ID、B2_APP_KEY、B2_BUCKET、B2_ENDPOINT
+  //    例：npx wrangler secret put B2_APP_KEY
+  //
+  // B. Cloudflare R2（要用就取消下面的注释，并先建桶）
+  //    npx wrangler r2 bucket create hairless-monkey-photos
+  //
+  // "r2_buckets": [
+  //   {
+  //     "binding": "PHOTO_BUCKET",
+  //     "bucket_name": "hairless-monkey-photos"
+  //   }
+  // ],
+
   "vars": {
-    // 可选：开启 Turnstile 后填入站点公钥（0x 开头），同时用 secret 设置 TURNSTILE_SECRET_KEY
-    // "TURNSTILE_SITE_KEY": "0x4AAA..."
+    // 可选：Turnstile 站点公钥（0x 开头），同时用 secret 设置 TURNSTILE_SECRET_KEY
+    // "TURNSTILE_SITE_KEY": "0x4AAA...",
+
+    // Backblaze B2：bucket 名和 S3 端点不是密钥，可以直接写在这里
+    // "B2_BUCKET": "hairless-monkey-photos",
+    // "B2_ENDPOINT": "https://s3.us-west-004.backblazeb2.com"
   },
+
   "observability": {
     "enabled": true
   }
