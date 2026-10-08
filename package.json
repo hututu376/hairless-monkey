@@ -8,9 +8,12 @@
     "deploy": "wrangler deploy",
     "photos": "python scripts/build-photos.py",
     "tail": "wrangler tail",
-    "verify": "node tools/verify.mjs"
+    "verify": "node tools/verify.mjs",
+    "pages:build": "node scripts/build-pages.mjs",
+    "pages:deploy": "npm run pages:build && wrangler pages deploy pages-dist"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "puppeteer-core": "^25.13.0",
     "wrangler": "^4.20.0"
   }

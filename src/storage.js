@@ -1,24 +1,27 @@
 /**
- * 照片存储层：R2 和 Backblaze B2 二选一，接口完全一样。
+ * 照片存储层：Backblaze B2 或 Cloudflare R2，对外接口完全一致。
  *
- * 优先用 R2（绑定了 PHOTO_BUCKET 就用它），否则用 B2（配好 B2_* 变量就用它），
- * 都没配就返回 null，页面上会提示"照片存储还没配置好"。
+ * - 绑定了 R2（PHOTO_BUCKET）就用 R2；
+ * - 配了 B2_KEY_ID / B2_APP_KEY / B2_BUCKET 就用 Backblaze B2；
+ * - 都没配返回 null，页面上会提示「照片存储还没配置好」。
+ *
+ * B2 走的是官方原生 API（不是 S3 兼容接口）：原生接口支持账号级 master key，
+ * 而且列表时会把自定义元数据（上传者、说明、尺寸）一起返回，不需要再逐张取头部。
  */
-
-import { signAwsRequest } from "./sigv4.js";
 
 export const PHOTO_PREFIX = "photos/";
 
-const byUploadedDesc = (a, b) => {
-  const byTime = String(b.metadata?.uploaded || b.uploaded || "").localeCompare(
-    String(a.metadata?.uploaded || a.uploaded || ""),
-  );
-  return byTime !== 0 ? byTime : b.key.localeCompare(a.key);
-};
+const B2_AUTH_URL = "https://api.backblazeb2.com/b2api/v2/b2_authorize_account";
+const AUTH_TTL = 12 * 60 * 60 * 1000;
+const UPLOAD_TTL = 60 * 60 * 1000;
+
+/** 同一个 isolate 里复用授权，避免每个请求都去换 token。 */
+let cachedAuth = null;
+let cachedUpload = null;
 
 export function createStorage(env) {
   if (env.PHOTO_BUCKET) return new R2Storage(env.PHOTO_BUCKET);
-  if (env.B2_KEY_ID && env.B2_APP_KEY && env.B2_BUCKET && env.B2_ENDPOINT) return new B2Storage(env);
+  if (env.B2_KEY_ID && env.B2_APP_KEY && env.B2_BUCKET) return new B2Storage(env);
   return null;
 }
 
@@ -47,8 +50,9 @@ class R2Storage {
       metadata: object.customMetadata || {},
     }));
 
+    items.sort((a, b) => a.key.localeCompare(b.key));
     return {
-      items: items.sort(byUploadedDesc),
+      items,
       cursor: listed.truncated ? listed.cursor : null,
       truncated: Boolean(listed.truncated),
     };
@@ -93,191 +97,224 @@ class R2Storage {
 
 /* ------------------------------ Backblaze B2 ------------------------------ */
 
-const base64url = (text) => {
+const toBase64 = (text) => {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
   bytes.forEach((byte) => {
     binary += String.fromCharCode(byte);
   });
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary);
 };
 
-const fromBase64url = (value) => {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
-};
-
-const decodeXml = (value) =>
-  value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, "&");
-
-/** Workers 里没有 DOMParser，ListObjectsV2 的结构又很固定，这里用正则取字段。 */
-function parseListObjects(xml) {
-  const contents = [];
-  const blockRe = /<Contents>([\s\S]*?)<\/Contents>/g;
-  let match;
-  while ((match = blockRe.exec(xml)) !== null) {
-    const block = match[1];
-    const key = /<Key>([\s\S]*?)<\/Key>/.exec(block)?.[1];
-    if (!key) continue;
-    contents.push({
-      key: decodeXml(key),
-      size: Number(/<Size>(\d+)<\/Size>/.exec(block)?.[1] || 0),
-      lastModified: /<LastModified>([^<]+)<\/LastModified>/.exec(block)?.[1] || "",
-      etag: decodeXml(/<ETag>([^<]*)<\/ETag>/.exec(block)?.[1] || "").replace(/"/g, ""),
-    });
-  }
-  return {
-    contents,
-    truncated: /<IsTruncated>true<\/IsTruncated>/i.test(xml),
-    nextToken: decodeXml(
-      /<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/.exec(xml)?.[1] || "",
-    ),
-  };
+async function sha1Hex(buffer) {
+  const digest = await crypto.subtle.digest("SHA-1", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-function metadataFromHeaders(headers) {
-  const encoded = headers.get("x-amz-meta-json");
-  if (encoded) {
-    try {
-      return JSON.parse(fromBase64url(encoded));
-    } catch {
-      return {};
-    }
-  }
-  const plain = {};
+/** B2 的自定义元数据走 X-Bz-Info-* 头，值经过 URL 编码。 */
+function fileInfoFromHeaders(headers, prefix = "x-bz-info-") {
+  const info = {};
   headers.forEach((value, name) => {
-    if (name.startsWith("x-amz-meta-") && name !== "x-amz-meta-json") {
-      plain[name.slice("x-amz-meta-".length)] = value;
+    if (!name.toLowerCase().startsWith(prefix)) return;
+    const key = name.slice(prefix.length).toLowerCase();
+    try {
+      info[key] = decodeURIComponent(value);
+    } catch {
+      info[key] = value;
     }
   });
-  return plain;
-}
-
-function regionFromEndpoint(endpoint, fallback) {
-  const host = new URL(endpoint).host;
-  const match = /^s3[.-]([a-z0-9-]+)\.backblazeb2\.com$/i.exec(host);
-  return match?.[1] || fallback || "us-west-004";
+  return info;
 }
 
 class B2Storage {
   constructor(env) {
     this.kind = "b2";
-    this.bucket = env.B2_BUCKET;
-    this.endpoint = String(env.B2_ENDPOINT).replace(/\/+$/, "");
     this.keyId = env.B2_KEY_ID;
     this.appKey = env.B2_APP_KEY;
-    this.region = regionFromEndpoint(this.endpoint, env.B2_REGION);
+    this.bucketName = env.B2_BUCKET;
+    // 只在离线测试时才需要指向本地假 B2
+    this.authUrl = env.B2_AUTH_URL || B2_AUTH_URL;
   }
 
-  async request(method, key, { query, headers = {}, body } = {}) {
-    const path =
-      `${this.endpoint}/${encodeURIComponent(this.bucket)}` +
-      (key ? `/${key.split("/").map(encodeURIComponent).join("/")}` : "");
-    const url = new URL(path);
-    if (query) {
-      for (const [name, value] of Object.entries(query)) {
-        if (value !== undefined && value !== null && value !== "") url.searchParams.set(name, String(value));
-      }
-    }
+  async authorize(force = false) {
+    const now = Date.now();
+    const reusable =
+      cachedAuth &&
+      cachedAuth.keyId === this.keyId &&
+      cachedAuth.bucketName === this.bucketName &&
+      cachedAuth.expiresAt > now;
+    if (!force && reusable) return cachedAuth;
 
-    const signed = await signAwsRequest({
-      accessKeyId: this.keyId,
-      secretAccessKey: this.appKey,
-      region: this.region,
-      service: "s3",
-      method,
-      url: url.toString(),
-      headers,
-      body,
+    const response = await fetch(this.authUrl, {
+      headers: { authorization: `Basic ${toBase64(`${this.keyId}:${this.appKey}`)}` },
+    });
+    if (!response.ok) {
+      throw new Error(`B2 authorize ${response.status}: ${await response.text()}`);
+    }
+    const account = await response.json();
+
+    const buckets = await this.call(account, "b2_list_buckets", { accountId: account.accountId });
+    const bucket = (buckets.buckets || []).find((entry) => entry.bucketName === this.bucketName);
+    if (!bucket) throw new Error(`B2 里找不到存储桶：${this.bucketName}`);
+
+    cachedAuth = {
+      keyId: this.keyId,
+      bucketName: this.bucketName,
+      authorizationToken: account.authorizationToken,
+      apiUrl: account.apiUrl,
+      downloadUrl: account.downloadUrl,
+      accountId: account.accountId,
+      bucketId: bucket.bucketId,
+      expiresAt: now + AUTH_TTL,
+    };
+    return cachedAuth;
+  }
+
+  /** 调 b2api；令牌过期（401）自动重授权一次。 */
+  async call(auth, path, body, retry = true) {
+    const response = await fetch(`${auth.apiUrl}/b2api/v2/${path}`, {
+      method: "POST",
+      headers: { authorization: auth.authorizationToken, "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
 
-    return fetch(url.toString(), { method, headers: signed, body });
+    if (response.status === 401 && retry) {
+      cachedAuth = null;
+      return this.call(await this.authorize(true), path, body, false);
+    }
+    if (!response.ok) {
+      throw new Error(`B2 ${path} ${response.status}: ${await response.text()}`);
+    }
+    return response.json();
+  }
+
+  async uploadUrl(auth) {
+    const now = Date.now();
+    if (cachedUpload && cachedUpload.bucketId === auth.bucketId && cachedUpload.expiresAt > now) {
+      return cachedUpload;
+    }
+    const created = await this.call(auth, "b2_get_upload_url", { bucketId: auth.bucketId });
+    cachedUpload = {
+      bucketId: auth.bucketId,
+      uploadUrl: created.uploadUrl,
+      authorizationToken: created.authorizationToken,
+      expiresAt: now + UPLOAD_TTL,
+    };
+    return cachedUpload;
+  }
+
+  toItem(file) {
+    const info = file.fileInfo || {};
+    const uploaded = info.uploaded || (file.uploadTimestamp ? new Date(file.uploadTimestamp).toISOString() : "");
+    return {
+      key: file.fileName,
+      fileId: file.fileId,
+      size: file.contentLength || 0,
+      uploaded,
+      contentType: file.contentType || "",
+      etag: (file.contentSha1 || "").slice(0, 32),
+      metadata: { ...info, uploaded },
+    };
+  }
+
+  async list({ limit = 24, cursor } = {}) {
+    const auth = await this.authorize();
+    const data = await this.call(auth, "b2_list_file_names", {
+      bucketId: auth.bucketId,
+      prefix: PHOTO_PREFIX,
+      maxFileCount: Math.min(limit, 1000),
+      ...(cursor ? { startFileName: cursor } : {}),
+    });
+
+    const items = (data.files || []).map((file) => this.toItem(file));
+    // 键名里带的是倒序时间戳，名字升序 = 最新在前
+    items.sort((a, b) => a.key.localeCompare(b.key));
+    return { items, cursor: data.nextFileName || null, truncated: Boolean(data.nextFileName) };
   }
 
   async put(key, body, { contentType, cacheControl, metadata = {} }) {
-    const headers = {
-      "content-type": contentType,
-      "cache-control": cacheControl,
-      // B2 的自定义元数据走 HTTP 头，值必须是 ASCII，所以整块 JSON 做 base64url。
-      "x-amz-meta-json": base64url(JSON.stringify(metadata)),
-    };
-    const response = await this.request("PUT", key, { headers, body });
-    if (!response.ok) {
-      throw new Error(`B2 put failed: ${response.status} ${await response.text()}`);
+    const auth = await this.authorize();
+    const upload = await this.uploadUrl(auth);
+    const bytes = body instanceof ArrayBuffer ? body : await new Response(body).arrayBuffer();
+
+    const headers = new Headers();
+    headers.set("authorization", upload.authorizationToken);
+    headers.set("x-bz-file-name", encodeURIComponent(key));
+    headers.set("content-type", contentType);
+    headers.set("x-bz-content-sha1", await sha1Hex(bytes));
+    if (cacheControl) headers.set("cache-control", cacheControl);
+    for (const [name, value] of Object.entries(metadata)) {
+      headers.set(`x-bz-info-${String(name).toLowerCase()}`, encodeURIComponent(String(value)));
     }
+
+    const response = await fetch(upload.uploadUrl, { method: "POST", headers, body: bytes });
+    if (response.status === 401) cachedUpload = null;
+    if (!response.ok) {
+      throw new Error(`B2 upload ${response.status}: ${await response.text()}`);
+    }
+    return response.json();
+  }
+
+  fileUrl(auth, key) {
+    const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+    return `${auth.downloadUrl}/file/${encodeURIComponent(this.bucketName)}/${encodedKey}`;
+  }
+
+  async download(key, method = "GET") {
+    const auth = await this.authorize();
+    const response = await fetch(this.fileUrl(auth, key), {
+      method,
+      headers: { authorization: auth.authorizationToken },
+    });
+    if (response.status === 401) cachedAuth = null;
+    return response;
   }
 
   async get(key) {
-    const response = await this.request("GET", key);
+    const response = await this.download(key, "GET");
     if (!response.ok) return null;
+    const metadata = fileInfoFromHeaders(response.headers);
     return {
       body: response.body,
       size: Number(response.headers.get("content-length") || 0),
-      uploaded: metadataFromHeaders(response.headers).uploaded || "",
+      uploaded: metadata.uploaded || "",
       contentType: response.headers.get("content-type") || "application/octet-stream",
-      etag: (response.headers.get("etag") || "").replace(/"/g, ""),
-      metadata: metadataFromHeaders(response.headers),
+      etag: (response.headers.get("x-bz-content-sha1") || "").slice(0, 32),
+      metadata,
     };
   }
 
   async head(key) {
-    const response = await this.request("HEAD", key);
+    const response = await this.download(key, "HEAD");
     if (!response.ok) return null;
+    const metadata = fileInfoFromHeaders(response.headers);
     return {
       size: Number(response.headers.get("content-length") || 0),
-      uploaded: metadataFromHeaders(response.headers).uploaded || "",
+      uploaded: metadata.uploaded || "",
       contentType: response.headers.get("content-type") || "application/octet-stream",
-      etag: (response.headers.get("etag") || "").replace(/"/g, ""),
-      metadata: metadataFromHeaders(response.headers),
+      etag: (response.headers.get("x-bz-content-sha1") || "").slice(0, 32),
+      metadata,
     };
   }
 
   async deleteMany(keys) {
-    await Promise.all(keys.slice(0, 20).map((key) => this.request("DELETE", key)));
-  }
-
-  async list({ limit = 24, cursor } = {}) {
-    const response = await this.request("GET", "", {
-      query: {
-        "list-type": "2",
-        prefix: PHOTO_PREFIX,
-        "max-keys": limit,
-        "continuation-token": cursor || "",
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`B2 list failed: ${response.status} ${await response.text()}`);
+    const auth = await this.authorize();
+    for (const key of keys.slice(0, 50)) {
+      // 删除要 fileId，先按名字精确查一条
+      const listed = await this.call(auth, "b2_list_file_names", {
+        bucketId: auth.bucketId,
+        prefix: key,
+        maxFileCount: 1,
+      });
+      const file = (listed.files || []).find((entry) => entry.fileName === key);
+      if (file) {
+        await this.call(auth, "b2_delete_file_version", {
+          fileName: file.fileName,
+          fileId: file.fileId,
+        });
+      }
     }
-
-    const { contents, truncated, nextToken } = parseListObjects(await response.text());
-
-    // S3 的 list 不返回自定义元数据，只能对每条再取一次头部（每页最多 24 条）。
-    const items = await Promise.all(
-      contents.map(async (entry) => {
-        const head = await this.head(entry.key).catch(() => null);
-        return {
-          key: entry.key,
-          size: head?.size || entry.size,
-          uploaded:
-            head?.uploaded ||
-            (entry.lastModified ? new Date(entry.lastModified).toISOString() : ""),
-          contentType: head?.contentType || "",
-          etag: head?.etag || entry.etag,
-          metadata: head?.metadata || {},
-        };
-      }),
-    );
-
-    return {
-      items: items.sort(byUploadedDesc),
-      cursor: truncated ? nextToken || null : null,
-      truncated,
-    };
   }
 }

@@ -1,221 +1,191 @@
 /**
- * 本地假 Backblaze B2（只实现站点用到的那几个 S3 接口），用来离线验证 B2 存储通道。
+ * 本地假 Backblaze B2（只实现站点用到的原生 API），用来离线验证 B2 存储通道。
  *
- *   node tools/mock-b2.mjs                  # 监听 9100
- *   B2_BUCKET=test-bucket node tools/mock-b2.mjs
+ *   node tools/mock-b2.mjs        # 监听 9100
  *
- * 它会独立实现一遍 AWS SigV4 校验（Node 的 crypto），
- * 如果 Worker 那边签名算错，这里会立刻打印 mismatch，而不是等真上传到 B2 才发现。
+ * 配合：
+ *   npx wrangler dev --port 8787 \
+ *     --var B2_AUTH_URL:http://127.0.0.1:9100/b2api/v2/b2_authorize_account \
+ *     --var B2_KEY_ID:test-key --var B2_APP_KEY:test-secret --var B2_BUCKET:test-bucket
+ *
+ * 它会校验 X-Bz-Content-Sha1、X-Bz-Info-* 的编码，以及删除是否真的生效，
+ * 有问题会在日志里直接报出来。
  */
 
 import crypto from "node:crypto";
 import http from "node:http";
 
 const PORT = Number(process.env.PORT || 9100);
-const ACCESS_KEY = process.env.B2_KEY_ID || "test-key";
-const SECRET_KEY = process.env.B2_APP_KEY || "test-secret";
-const REGION = process.env.B2_REGION || "us-west-004";
-const SERVICE = "s3";
-const BUCKET = process.env.B2_BUCKET || "test-bucket";
+const BUCKET_NAME = process.env.B2_BUCKET || "test-bucket";
+const BUCKET_ID = "mock-bucket-id";
+const API_TOKEN = "mock-api-token";
+const UPLOAD_TOKEN = "mock-upload-token";
 
-/** key -> { body: Buffer, contentType, cacheControl, metaJson, lastModified } */
+/** key -> { body, contentType, sha1, info: {name: value}, uploadTimestamp } */
 const objects = new Map();
 
-const rfc3986 = (value) =>
-  encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+const readJson = (request) =>
+  new Promise((resolve) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
+      } catch {
+        resolve({});
+      }
+    });
+  });
 
-const sha256Hex = (data) => crypto.createHash("sha256").update(data).digest("hex");
-const hmac = (key, data) => crypto.createHmac("sha256", key).update(data).digest();
+const readBody = (request) =>
+  new Promise((resolve) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+  });
 
-function canonicalQueryFromRaw(rawQuery) {
-  if (!rawQuery) return "";
-  return rawQuery
-    .split("&")
-    .filter(Boolean)
-    .map((pair) => {
-      const index = pair.indexOf("=");
-      const key = index === -1 ? pair : pair.slice(0, index);
-      const value = index === -1 ? "" : pair.slice(index + 1);
-      return [rfc3986(decodeURIComponent(key)), rfc3986(decodeURIComponent(value))];
-    })
-    .sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : 1) : a[0] < b[0] ? -1 : 1))
-    .map(([key, value]) => `${key}=${value}`)
-    .join("&");
-}
+const sendJson = (response, data, status = 200) => {
+  const body = JSON.stringify(data);
+  response.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
+  response.end(body);
+};
 
-function canonicalPathFromRaw(rawPath) {
-  return rawPath
-    .split("/")
-    .map((segment) => rfc3986(decodeURIComponent(segment)))
-    .join("/");
-}
+const publicFile = (key) => {
+  const object = objects.get(key);
+  return {
+    accountId: "mock-account",
+    action: "upload",
+    bucketId: BUCKET_ID,
+    contentLength: object.body.length,
+    contentSha1: object.sha1,
+    contentType: object.contentType,
+    fileId: `mock-file-${key}`,
+    fileInfo: object.info,
+    fileName: key,
+    uploadTimestamp: object.uploadTimestamp,
+  };
+};
 
-/** 按 AWS 规范独立复算一遍签名，和 Worker 里的实现对比。 */
-function verifySignature(request, body) {
-  const authorization = request.headers.authorization || "";
-  const parsed =
-    /^AWS4-HMAC-SHA256 Credential=([^/]+)\/([^,]+), SignedHeaders=([^,]+), Signature=([0-9a-f]+)$/.exec(
-      authorization,
-    );
-  if (!parsed) return { ok: false, reason: "no AWS4-HMAC-SHA256 authorization header" };
+const server = http.createServer(async (request, response) => {
+  const base = `http://127.0.0.1:${PORT}`;
+  const [path, rawQuery = ""] = request.url.split("?");
+  const query = new URLSearchParams(rawQuery);
 
-  const [, accessKey, scope, signedHeaders, signature] = parsed;
-  const [dateStamp, region, service, terminator] = scope.split("/");
-  const amzDate = request.headers["x-amz-date"];
-  const payloadHash = request.headers["x-amz-content-sha256"];
-  if (accessKey !== ACCESS_KEY) return { ok: false, reason: `unexpected access key ${accessKey}` };
-  if (terminator !== "aws4_request") return { ok: false, reason: "bad scope terminator" };
-
-  const expectedPayload = body && body.length ? sha256Hex(body) : sha256Hex("");
-  if (payloadHash !== expectedPayload) {
-    return { ok: false, reason: `x-amz-content-sha256 mismatch (${payloadHash} != ${expectedPayload})` };
+  if (path === "/b2api/v2/b2_authorize_account") {
+    if (!request.headers.authorization?.startsWith("Basic ")) {
+      return sendJson(response, { code: "unauthorized", message: "missing basic auth" }, 401);
+    }
+    return sendJson(response, {
+      accountId: "mock-account",
+      authorizationToken: API_TOKEN,
+      apiUrl: base,
+      downloadUrl: base,
+      allowed: { capabilities: ["listBuckets", "listFiles", "readFiles", "writeFiles", "deleteFiles"] },
+    });
   }
 
-  const canonicalHeaders = signedHeaders
-    .split(";")
-    .map((name) => `${name}:${String(request.headers[name] ?? "").trim().replace(/\s+/g, " ")}\n`)
-    .join("");
-  const canonicalRequest = [
-    request.method,
-    canonicalPathFromRaw(request.url.split("?")[0]),
-    canonicalQueryFromRaw(request.url.split("?")[1]),
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join("\n");
-
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    amzDate,
-    `${dateStamp}/${region}/${service}/aws4_request`,
-    sha256Hex(canonicalRequest),
-  ].join("\n");
-
-  const signingKey = hmac(hmac(hmac(hmac(`AWS4${SECRET_KEY}`, dateStamp), region), service), "aws4_request");
-  const expected = crypto.createHmac("sha256", signingKey).update(stringToSign).digest("hex");
-
-  if (region !== REGION) return { ok: false, reason: `unexpected region ${region}` };
-  if (expected.length !== signature.length) return { ok: false, reason: "signature length mismatch" };
-  if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) {
-    return { ok: false, reason: `signature mismatch: got ${signature}, expected ${expected}` };
-  }
-  return { ok: true };
-}
-
-const xmlEscape = (value) =>
-  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-function listResponse(prefix, maxKeys, token) {
-  const keys = Array.from(objects.keys())
-    .filter((key) => key.startsWith(prefix))
-    .sort();
-  const start = token ? keys.findIndex((key) => key > token) : 0;
-  const slice = keys.slice(start === -1 ? keys.length : start, (start === -1 ? keys.length : start) + maxKeys);
-  const truncated = start !== -1 && start + slice.length < keys.length;
-
-  const contents = slice
-    .map((key) => {
-      const object = objects.get(key);
-      return [
-        "<Contents>",
-        `<Key>${xmlEscape(key)}</Key>`,
-        `<LastModified>${object.lastModified}</LastModified>`,
-        `<ETag>"${sha256Hex(object.body).slice(0, 32)}"</ETag>`,
-        `<Size>${object.body.length}</Size>`,
-        "<StorageClass>STANDARD</StorageClass>",
-        "</Contents>",
-      ].join("");
-    })
-    .join("");
-
-  return `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>${xmlEscape(BUCKET)}</Name><Prefix>${xmlEscape(prefix)}</Prefix><KeyCount>${slice.length}</KeyCount><MaxKeys>${maxKeys}</MaxKeys><IsTruncated>${truncated}</IsTruncated>${
-    truncated ? `<NextContinuationToken>${xmlEscape(slice[slice.length - 1])}</NextContinuationToken>` : ""
-  }${contents}</ListBucketResult>`;
-}
-
-const server = http.createServer((request, response) => {
-  const chunks = [];
-  request.on("data", (chunk) => chunks.push(chunk));
-  request.on("end", () => {
-    const body = Buffer.concat(chunks);
-    const verification = verifySignature(request, body);
-    const [rawPath, rawQuery = ""] = request.url.split("?");
-    const segments = rawPath.split("/").filter(Boolean).map(decodeURIComponent);
-    const bucket = segments[0];
-    const key = segments.slice(1).join("/");
-
-    console.log(
-      `${request.method} ${request.url} -> ${verification.ok ? "sig ok" : `SIG FAIL: ${verification.reason}`}`,
-    );
-
-    if (!verification.ok) {
-      response.writeHead(403, { "content-type": "application/xml" });
-      response.end("<Error><Code>SignatureDoesNotMatch</Code></Error>");
-      return;
-    }
-    if (bucket !== BUCKET) {
-      response.writeHead(404);
-      response.end("no such bucket");
-      return;
-    }
-
-    const params = new URLSearchParams(rawQuery);
-
-    if (request.method === "GET" && !key && params.get("list-type") === "2") {
-      const xml = listResponse(
-        params.get("prefix") || "",
-        Number(params.get("max-keys") || 1000),
-        params.get("continuation-token") || "",
-      );
-      response.writeHead(200, { "content-type": "application/xml" });
-      response.end(xml);
-      return;
-    }
-
-    if (request.method === "PUT" && key) {
-      objects.set(key, {
-        body,
-        contentType: request.headers["content-type"] || "application/octet-stream",
-        cacheControl: request.headers["cache-control"] || "",
-        metaJson: request.headers["x-amz-meta-json"] || "",
-        lastModified: new Date().toISOString(),
-      });
-      response.writeHead(200, { etag: `"${sha256Hex(body).slice(0, 32)}"` });
-      response.end();
-      return;
-    }
-
-    if ((request.method === "GET" || request.method === "HEAD") && key) {
+  if (!path.startsWith("/b2api/v2/") && path !== "/upload") {
+    // 文件下载走这里
+    const match = /^\/file\/([^/]+)\/(.+)$/.exec(path);
+    if (match) {
+      const key = match[2].split("/").map(decodeURIComponent).join("/");
       const object = objects.get(key);
       if (!object) {
-        response.writeHead(404, { "content-type": "application/xml" });
-        response.end("<Error><Code>NoSuchKey</Code></Error>");
-        return;
+        response.writeHead(404);
+        return response.end("not found");
       }
-      response.writeHead(200, {
+      const headers = {
         "content-type": object.contentType,
-        "cache-control": object.cacheControl,
         "content-length": String(object.body.length),
-        etag: `"${sha256Hex(object.body).slice(0, 32)}"`,
-        "last-modified": object.lastModified,
-        "x-amz-meta-json": object.metaJson,
-      });
-      response.end(request.method === "HEAD" ? undefined : object.body);
-      return;
+        "x-bz-content-sha1": object.sha1,
+        "x-bz-file-name": encodeURIComponent(key),
+      };
+      for (const [name, value] of Object.entries(object.info)) {
+        headers[`x-bz-info-${name}`] = encodeURIComponent(value);
+      }
+      response.writeHead(200, headers);
+      return response.end(request.method === "HEAD" ? undefined : object.body);
+    }
+    response.writeHead(404);
+    return response.end("not found");
+  }
+
+  if (path === "/upload") {
+    if (request.headers.authorization !== UPLOAD_TOKEN) {
+      return sendJson(response, { code: "unauthorized", message: "bad upload token" }, 401);
+    }
+    const body = await readBody(request);
+    const key = decodeURIComponent(request.headers["x-bz-file-name"] || "");
+    if (!key) return sendJson(response, { code: "bad_request", message: "missing file name" }, 400);
+
+    const expected = request.headers["x-bz-content-sha1"];
+    const actual = crypto.createHash("sha1").update(body).digest("hex");
+    if (expected !== actual) {
+      console.log(`  !! sha1 mismatch for ${key}: got ${expected}, expected ${actual}`);
+      return sendJson(response, { code: "bad_request", message: "sha1 mismatch" }, 400);
     }
 
-    if (request.method === "DELETE" && key) {
-      objects.delete(key);
-      response.writeHead(204);
-      response.end();
-      return;
+    const info = {};
+    for (const [name, value] of Object.entries(request.headers)) {
+      if (!name.startsWith("x-bz-info-")) continue;
+      info[name.slice("x-bz-info-".length)] = decodeURIComponent(String(value));
     }
 
-    response.writeHead(400);
-    response.end("unsupported request");
-  });
+    objects.set(key, {
+      body,
+      contentType: request.headers["content-type"] || "application/octet-stream",
+      sha1: actual,
+      info,
+      uploadTimestamp: Date.now(),
+    });
+    console.log(`  upload ${key} (${body.length} bytes, info=${JSON.stringify(info)})`);
+    return sendJson(response, publicFile(key));
+  }
+
+  if (request.headers.authorization !== API_TOKEN) {
+    return sendJson(response, { code: "unauthorized", message: "bad api token" }, 401);
+  }
+
+  const body = await readJson(request);
+
+  if (path === "/b2api/v2/b2_list_buckets") {
+    return sendJson(response, {
+      buckets: [{ accountId: "mock-account", bucketId: BUCKET_ID, bucketName: BUCKET_NAME, bucketType: "allPrivate" }],
+    });
+  }
+
+  if (path === "/b2api/v2/b2_list_file_names") {
+    const prefix = body.prefix || "";
+    const startFileName = body.startFileName || "";
+    const max = body.maxFileCount || 1000;
+    const keys = Array.from(objects.keys())
+      .filter((key) => key.startsWith(prefix) && key >= startFileName)
+      .sort();
+    const slice = keys.slice(0, max);
+    const next = keys.length > slice.length ? keys[slice.length] : null;
+    console.log(`  list prefix=${JSON.stringify(prefix)} -> ${slice.length} 条${next ? " (还有下一页)" : ""}`);
+    return sendJson(response, {
+      files: slice.map(publicFile),
+      nextFileName: next,
+    });
+  }
+
+  if (path === "/b2api/v2/b2_get_upload_url") {
+    return sendJson(response, { bucketId: BUCKET_ID, uploadUrl: `${base}/upload`, authorizationToken: UPLOAD_TOKEN });
+  }
+
+  if (path === "/b2api/v2/b2_delete_file_version") {
+    const key = body.fileName;
+    const existed = objects.delete(key);
+    console.log(`  delete ${key} -> ${existed ? "ok" : "not found"}`);
+    if (!existed) return sendJson(response, { code: "not_found", message: "no such file" }, 404);
+    return sendJson(response, { fileName: key, fileId: body.fileId });
+  }
+
+  response.writeHead(404);
+  response.end(JSON.stringify({ code: "not_found", message: path }));
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`mock B2 listening on http://127.0.0.1:${PORT} (bucket: ${BUCKET})`);
+  console.log(`mock B2 (native API) listening on http://127.0.0.1:${PORT} (bucket: ${BUCKET_NAME})`);
 });

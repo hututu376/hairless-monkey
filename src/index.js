@@ -163,7 +163,12 @@ async function handleUpload(request, env) {
     height: String(clampInt(form.get("height"), 0, 30000)),
   };
 
-  await storage.put(key, buffer, { contentType: type, cacheControl: IMMUTABLE, metadata });
+  try {
+    await storage.put(key, buffer, { contentType: type, cacheControl: IMMUTABLE, metadata });
+  } catch (error) {
+    console.error("upload failed", error);
+    return json({ error: "storage_unavailable", detail: String(error?.message || error) }, { status: 502 });
+  }
 
   return json(
     {
@@ -188,7 +193,14 @@ async function handleList(url, env) {
 
   const limit = clampInt(url.searchParams.get("limit"), 1, 60) || 24;
   const cursor = url.searchParams.get("cursor") || undefined;
-  const listed = await storage.list({ limit, cursor });
+
+  let listed;
+  try {
+    listed = await storage.list({ limit, cursor });
+  } catch (error) {
+    console.error("list failed", error);
+    return json({ error: "storage_unavailable", detail: String(error?.message || error) }, { status: 502 });
+  }
 
   return json({
     items: listed.items.map(toItem),
@@ -206,23 +218,32 @@ async function handleImage(request, env, key, url) {
 
   const download = url.searchParams.get("download") === "1";
 
-  if (request.method === "HEAD") {
-    const head = await storage.head(key);
-    if (!head) return new Response(null, { status: 404 });
-    return new Response(null, { headers: imageHeaders({ ...head, key }, { download }) });
-  }
+  try {
+    if (request.method === "HEAD") {
+      const head = await storage.head(key);
+      if (!head) return new Response(null, { status: 404 });
+      return new Response(null, { headers: imageHeaders({ ...head, key }, { download }) });
+    }
 
-  const entry = await storage.get(key);
-  if (!entry) return new Response("Not Found", { status: 404 });
+    const entry = await storage.get(key);
+    if (!entry) return new Response("Not Found", { status: 404 });
 
-  if (entry.etag && request.headers.get("if-none-match")?.includes(entry.etag)) {
-    return new Response(null, {
-      status: 304,
-      headers: { etag: entry.etag, "cache-control": IMMUTABLE },
+    if (entry.etag && request.headers.get("if-none-match")?.includes(entry.etag)) {
+      return new Response(null, {
+        status: 304,
+        headers: { etag: entry.etag, "cache-control": IMMUTABLE },
+      });
+    }
+
+    return new Response(entry.body, { headers: imageHeaders({ ...entry, key }, { download }) });
+  } catch (error) {
+    // 存储端取不到图（网络不通、配额、区域问题等）时明确返回 502，而不是 500 崩掉
+    console.error("image proxy failed", key, error);
+    return new Response("照片存储暂时取不到这张图", {
+      status: 502,
+      headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
     });
   }
-
-  return new Response(entry.body, { headers: imageHeaders({ ...entry, key }, { download }) });
 }
 
 function safeEqual(a, b) {
@@ -251,7 +272,12 @@ async function handleDelete(request, env) {
   const valid = keys.filter((key) => typeof key === "string" && KEY_RE.test(key)).slice(0, 50);
   if (valid.length === 0) return json({ error: "bad_key" }, { status: 400 });
 
-  await storage.deleteMany(valid);
+  try {
+    await storage.deleteMany(valid);
+  } catch (error) {
+    console.error("delete failed", error);
+    return json({ error: "storage_unavailable", detail: String(error?.message || error) }, { status: 502 });
+  }
   return json({ deleted: valid });
 }
 

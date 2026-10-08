@@ -65,8 +65,44 @@ npm run deploy
 部署完成后会给出 `https://hairless-monkey.<你的子域>.workers.dev`。
 想用自己的域名，在控制台的 Workers → 该项目 → Settings → Domains & Routes 里绑定。
 
-如果走 GitHub 自动部署，构建命令填 `npm install`，部署命令填 `npx wrangler deploy`；
-之后 `git push` 就会自动重新部署。
+### 走 GitHub + Cloudflare Pages（不用 API token，推荐）
+
+这条路的授权在 Cloudflare 控制台里点几下就行，不需要命令行登录，也不会碰到 `localhost` 回调。
+
+1. 把仓库推到 GitHub，根目录要有 `public/`、`src/`、`scripts/`、`package.json`、`wrangler.jsonc`（`node_modules/`、`pages-dist/` 不要传，已在 `.gitignore` 里）。
+2. Cloudflare 控制台 → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**，选中仓库。
+3. 构建配置填：
+
+   | 项目 | 值 |
+   | --- | --- |
+   | Framework preset | `None` |
+   | Build command | `npm install && npm run pages:build` |
+   | Build output directory | `pages-dist` |
+
+4. **Save and Deploy**，跑完会给你 `https://<项目名>.pages.dev`。
+5. 进项目 → **Settings → Variables and Secrets**，加三项：
+
+   | 变量 | 类型 | 值 |
+   | --- | --- | --- |
+   | `B2_KEY_ID` | Secret | Backblaze 的 keyID |
+   | `B2_APP_KEY` | Secret | Backblaze 的 applicationKey |
+   | `B2_BUCKET` | Text | 桶名，例如 `herclus` |
+
+6. 回 **Deployments** → 对最新一次部署点 **Retry deployment**（环境变量要在新部署里才生效）。
+7. 打开 `https://<项目名>.pages.dev/api/config`，看到 `"storage":"b2"` 就说明接上了；之后每次 `git push` 都会自动重新部署。
+
+本地想先验证 Pages 产物：`npm run pages:build`，生成在 `pages-dist/`。
+
+### 走命令行直接部署（需要 API token 或 wrangler 登录）
+
+```bash
+npx wrangler login
+npx wrangler pages project create hairless-monkey --production-branch main --force
+npm run pages:build
+npx wrangler pages deploy pages-dist --project-name hairless-monkey --branch main --force
+```
+
+如果也要保留 Workers 版本（`*.workers.dev`），配好存储变量后直接 `npm run deploy` 即可。
 
 ## 照片存储：Backblaze B2（默认）或 Cloudflare R2
 

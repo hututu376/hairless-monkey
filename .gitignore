@@ -3,6 +3,8 @@ node_modules/
 .wrangler-config/
 .wrangler-cache/
 .shots/
+pages-dist/
+.shots/chrome-profile/
 dist/
 *.log
 .DS_Store
